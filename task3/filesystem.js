@@ -1,5 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs/promises');
+const streamifier = require('streamifier');
 
 const filesystemPath = path.resolve(__dirname, 'filesystem');
 const ADMIN_ROLE = 'admin';
@@ -13,31 +14,60 @@ async function getPathInfo(ctx) {
   }
   const isFile = stat.isFile();
   if (isFile) {
-    await readFile(absPath, ctx);
+    const isVideo = await isVideoFile(absPath);
+      if (isVideo) {
+      const videoBuffer = await fs.readFile(absPath);
+      const videoStream = streamifier.createReadStream(videoBuffer);
+      ctx.body = videoStream;
+      ctx.set('Content-Type', 'video/mp4');
+      ctx.set('Content-Disposition', `inline; filename="${path.basename(absPath)}"`);
+    } else {
+      await readFile(absPath, ctx);
+    }
   } else {
     await readDir(absPath, ctx);
   }
-};
+}
 
-async function createDir(ctx) {
-  const absPath = getRequestPath(ctx);
-  const stat = await fs.stat(absPath);
-  const isDir = stat.isDirectory();
-  if (!isDir) {
-    ctx.status = 400;
-    ctx.body = 'Path must be directory';
-    return;
-  }
-  const normalizedPath = (ctx.request.body?.path || '').split('/').map(p => p.trim().replaceAll(' ', '_')).join('/');
-  const fullPath = path.join(absPath, normalizedPath);
+async function isVideoFile(filePath) {
+  let extension = path.extname(filePath).toLowerCase();
+  const videoExtensions = ['.mp4', '.avi', '.mov'];
+  return videoExtensions.includes(extension)
+}
+
+
+async function createDir(ctx, noRes = false) {
+  const splitted = (ctx.path || '').split('/');
+  const normalizedPath = splitted.map(p => p.trim().replaceAll(' ', '_')).join('/');
+  const fullPath = getRequestPath({ path: normalizedPath });
   try {
     await fs.access(fullPath);
-    ctx.status = 400;
-    ctx.body = 'Path already exists';
+    if (!noRes) {
+      ctx.status = 400;
+      ctx.body = 'Path already exists';
+    }
   } catch (error) {
     await fs.mkdir(fullPath, { recursive: true });
+    if (!noRes) {
+      ctx.status = 200;
+      ctx.body = 'Directory created';
+    }
+  }
+}
+
+async function uploadFile(ctx) {
+  const file = ctx.request.files.file;
+  await createDir(ctx); // creates dir if not exists
+  const destinationPath = path.join(filesystemPath, ctx.path, file.originalFilename)
+  try {
+    await fs.rename(file.filepath, destinationPath);
     ctx.status = 200;
-    ctx.body = 'Directory created';
+    ctx.body = 'File uploaded';
+  } catch (err){
+    console.log(err)
+    await fs.unlink(file.filePath)
+    ctx.status = 400;
+    ctx.body = 'Something went wrong'
   }
 }
 
@@ -77,5 +107,6 @@ async function checkRoleMiddleware(ctx, next) {
 module.exports = {
   getPathInfo,
   createDir,
-  checkRoleMiddleware
+  checkRoleMiddleware,
+  uploadFile
 };
