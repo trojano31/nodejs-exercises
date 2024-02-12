@@ -2,6 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs/promises');
 
 const filesystemPath = path.resolve(__dirname, 'filesystem');
+const ADMIN_ROLE = 'admin';
 
 const getPathInfo = async(ctx) => {
   const reqPath = ctx.path || '/';
@@ -30,13 +31,24 @@ async function readFile(absPath, ctx) {
 }
 
 async function readDir(absPath, ctx) {
-  const data = await fs.readdir(absPath)
+  const data = await fs.readdir(absPath);
   ctx.body = {
     status: 200,
     nodes: data
   };
 }
 
+async function checkRoleMiddleware(ctx, next) {
+  const role = ctx.request.headers.role;
+
+  if (role !== ADMIN_ROLE) {
+    ctx.throw(403, 'Access denied');
+  }
+
+  await next();
+};
+
 module.exports = {
-  getPathInfo
+  getPathInfo,
+  checkRoleMiddleware
 };
