@@ -1,8 +1,9 @@
 const Koa = require('koa');
 const Router = require('koa-router');
-const { getPathInfo, checkRoleMiddleware } = require('./filesystem');
+const { getPathInfo, checkRoleMiddleware, createDir } = require('./filesystem');
 const app = new Koa();
 const router = new Router();
+const { koaBody } = require('koa-body');
 
 router.get(/\/admin.*/, checkRoleMiddleware, async(ctx) => {
   console.log('admin', )
@@ -13,10 +14,10 @@ router.get(/.*/, async(ctx) => {
   await getPathInfo(ctx)
 });
 
-router.post(/.*/, async(ctx) => {
-  ctx.body = 'hey';
+router.post(/.*/, checkRoleMiddleware, async(ctx) => {
+  await createDir(ctx)
 });
 
-
+app.use(koaBody());
 app.use(router.routes());
 app.listen(3000);
